@@ -3,6 +3,8 @@ import logging
 import subprocess
 import tempfile
 import uuid
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import Update
 from telegram.ext import (
@@ -13,16 +15,31 @@ from telegram.ext import (
     filters,
 )
 
-# ==== SOZLAMALAR ====
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "SIZNING_BOT_TOKENINGIZ_BU_YERGA")
-MAX_FILE_SIZE_MB = 20  # Telegram bot API cheklovi ~20MB (yuklab olish uchun)
+MAX_FILE_SIZE_MB = 20
 ALLOWED_EXTENSIONS = (".doc", ".docx", ".rtf", ".odt")
+PORT = int(os.environ.get("PORT", 10000))
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def run_health_server():
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    server.serve_forever()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -44,10 +61,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def convert_to_pdf(input_path: str, output_dir: str) -> str:
-    """
-    LibreOffice headless rejimida faylni PDF ga aylantiradi.
-    Muvaffaqiyatli bo'lsa PDF fayl yo'lini qaytaradi.
-    """
     cmd = [
         "libreoffice",
         "--headless",
@@ -139,11 +152,11 @@ async def handle_wrong_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     if BOT_TOKEN == "SIZNING_BOT_TOKENINGIZ_BU_YERGA":
-        print(
-            "❗ BOT_TOKEN o'rnatilmagan. "
-            "Muhit o'zgaruvchisi sifatida yoki koddagi BOT_TOKEN qiymatini o'zgartiring."
-        )
+        print("❗ BOT_TOKEN o'rnatilmagan.")
         return
+
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
